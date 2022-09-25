@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page</title>
+</head>
+<body>
+    <script type="text/javascript">
+        (async () => {
+            const cacheName = `currency-cache`
+            const currencies = ['USD', 'EUR', 'AUD', 'CAD', 'CHF', 'NZD', 'BGN']
+            let possiblePairs = []
+            let exchangeUrlList = []
+            let possiblePairsWithRates = []
+            const optionReadyValues = {}
+            const optionElements = []
+            let group1 = []
+            let group2 = []
+            let group3 = []
+
+            function getPossiblePairs(data) {
+                let arrayToReturn = []
+                for (const currency of data) {
+                    for (const currencyInner of data) {
+                        currency !== currencyInner ? arrayToReturn.push([currency.toLowerCase(), currencyInner.toLowerCase()]) : ''
+                    }
+                }
+                return arrayToReturn
+            }
+
+            function getUrlsToBeFetched(data) {
+                const urls = []
+                for (const [currency1, currency2] of data) {
+                    urls.push(`https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/latest/currencies/${currency1}/${currency2}.json`)
+                }
+                return urls
+            }
+
+            function addExchangeRatesToPairs(oldPairs, fetchResponseDataArray) {
+                const pairsWithExchangeRates = []
+                for (const [index, [currency1, currency2]] of oldPairs.entries()) {
+                    pairsWithExchangeRates.push([currency1, currency2, fetchResponseDataArray[index][currency2]])
+                }
+                return pairsWithExchangeRates
+            }
+
+            function formAndSortGroups(selectedCurrency, dataPoll) {
+                const tempGroup1 = []
+                const tempGroup2 = []
+                const tempGroup3 = []
+                for (const rateObject of dataPoll[selectedCurrency]) {
+                    if (rateObject[2] < 1) {
+                        tempGroup1.push({mainCurrency: rateObject[0], exchangedForCurrency: rateObject[1], rate: rateObject[2]})
+                    } else if(rateObject[2] >= 1.5) {
+                        tempGroup3.push({mainCurrency: rateObject[0], exchangedForCurrency: rateObject[1], rate: rateObject[2]})
+                    } else {
+                        tempGroup2.push({mainCurrency: rateObject[0], exchangedForCurrency: rateObject[1], rate: rateObject[2]})
+                    }
+                }
+
+                // Sort groups
+                tempGroup1.sort((a, b) => {
+                    if(a.rate > b.rate) return 1
+                    if(a.rate < b.rate) return -1
+                    if(a.rate === b.rate) return 0
+                })
+                tempGroup2.sort((a, b) => {
+                    if(a.rate > b.rate) return 1
+                    if(a.rate < b.rate) return -1
+                    if(a.rate === b.rate) return 0
+                })
+                tempGroup3.sort((a, b) => {
+                    if(a.rate > b.rate) return 1
+                    if(a.rate < b.rate) return -1
+                    if(a.rate === b.rate) return 0
+                })
+                return {group1: tempGroup1, group2: tempGroup2, group3: tempGroup3}
+            }
+
+            function generateTableUI(groups) {
+                let flexWrapper = document.getElementById('table_flex_wrapper')
+                if (flexWrapper) {
+                    flexWrapper.innerHTML = ``
+                } else {
+                    flexWrapper = document.createElement('div')
+                    flexWrapper.setAttribute('id', 'table_flex_wrapper')
+                    flexWrapper.style.display = 'flex'
+                    flexWrapper.style.width = 'max-content'
+                    flexWrapper.style.height = 'max-content'
+                }
+                const column1 = document.createElement('div')
+                const column2 = document.createElement('div')
+                const column3 = document.createElement('div')
+
+                column1.style.margin = '0 10px'
+                column1.style.padding = '0 5px'
+                column1.style.border = '1px solid black'
+
+                column2.style.margin = '0 10px'
+                column2.style.padding = '0 5px'
+                column2.style.border = '1px solid black'
+
+                column3.style.margin = '0 10px'
+                column3.style.padding = '0 5px'
+                column3.style.border = '1px solid black'
+
+                column1.insertAdjacentHTML('beforeend', `<p><b>Group 1</b></p>`)
+                for (const item of groups.group1) {
+                    column1.insertAdjacentHTML('beforeend', `
+                        <p style="border-bottom: '1px solid black';">${item.mainCurrency.toUpperCase()}-${item.exchangedForCurrency.toUpperCase()} ${item.rate}</p>
+                    `)
+                }
+                column1.insertAdjacentHTML('beforeend', `<p>Count: ${groups.group1.length}</p>`)
+
+                column2.insertAdjacentHTML('beforeend', `<p><b>Group 2</b></p>`)
+                for (const item of groups.group2) {
+                    column2.insertAdjacentHTML('beforeend', `
+                        <p>${item.mainCurrency.toUpperCase()}-${item.exchangedForCurrency.toUpperCase()} ${item.rate}</p>
+                    `)
+                }
+                column2.insertAdjacentHTML('beforeend', `<p>Count: ${groups.group2.length}</p>`)
+
+                column3.insertAdjacentHTML('beforeend', `<p><b>Group 3</b></p>`)
+                for (const item of groups.group3) {
+                    column3.insertAdjacentHTML('beforeend', `
+                        <p>${item.mainCurrency.toUpperCase()}-${item.exchangedForCurrency.toUpperCase()} ${item.rate}</p>
+                    `)
+                }
+                column3.insertAdjacentHTML('beforeend', `<p>Count: ${groups.group3.length}</p>`)
+
+                flexWrapper.appendChild(column1)
+                flexWrapper.appendChild(column2)
+                flexWrapper.appendChild(column3)
+
+                return flexWrapper
+            }
+
+            function getRatesByCurrency(currency, pairs) {
+                return pairs.filter(el => el[0] === currency || el[1] === currency)
+            }
+
+            async function fetchCurrencyData(urls) {
+                const currencyCache = await caches.open(cacheName);
+
+                return Promise.all(urls.map(async (url) => {
+                    const cachedRes = await currencyCache.match(url)
+                    if (cachedRes && cachedRes.ok) {
+                        const cachedDate = new Date(cachedRes.headers.get('date'))
+                        if (Date.now() > cachedDate.getTime() + 1000 * 60 * 60 * 24) {
+                            currencyCache.delete(url)
+                            currencyCache.add(url)
+                            return fetch(url, {cache: 'no-store'}).then(res => res.json())
+                        }
+                        return cachedRes.json()
+                    } else {
+                        currencyCache.add(url)
+                        return fetch(url, {cache: 'no-store'}).then(res => res.json())
+                    }
+                }))
+            }
+            function changeExchangeRatesUIData(selectedCurrency, dataPoll) {
+                // Form the groups
+                const groups = formAndSortGroups(selectedCurrency, dataPoll)
+
+                // Generate a table
+                document.body.insertAdjacentElement('beforeend', generateTableUI(groups))
+            }
+
+            function getLongestArrayLength(sortedExchangeRatesGroup) {
+                let maxLength = 0
+
+                // Algorithm: Start 2 nested loops; the outer is looping from the
+                // start to the end while the second is looping from current outer element to the end.
+                // Keep the currently found value of the longest array in 'maxLength'
+                // If 'maxLength' is >= to the remaining length between the current element
+                // and the end of the array - stop the outer loop (because it's impossible to find lengthier array)
+                // Because the array is sorted, the inner loop is counting how many consecutive elements meet the criteria
+                // If there are no more 'valid' elements, check if current counter is greater than 'maxLength' -
+                // if it is - assign the new max value - and break out from the inner loop
+                for (let i = 0; i < sortedExchangeRatesGroup.length; i++) {
+                    const initialRate = sortedExchangeRatesGroup[i][2]
+                    if (maxLength >= sortedExchangeRatesGroup.length - i) {
+                        break
+                    } else {
+                        let currentLengthCounter = 0
+                        for (let innerIndex = i; innerIndex < sortedExchangeRatesGroup.length; innerIndex++) {
+                            const element = sortedExchangeRatesGroup[innerIndex];
+                            if (element[2] - initialRate <= 0.5) {
+                                currentLengthCounter++
+                            } else {
+                                if (currentLengthCounter > maxLength) {
+                                    maxLength = currentLengthCounter
+                                }
+                                break
+                            }
+                        }
+                    }
+                }
+                return maxLength
+            }
+
+            function calculateAndDisplayLongestArrayLength(currentlySelectedCurrency, dataPoll) {
+                // Get all exchange rates for currently selected currency
+                const commonGroup = dataPoll[currentlySelectedCurrency]
+
+                // Sort the exchange rates in ascending order
+                commonGroup.sort((a, b) => {
+                    if(a[2] > b[2]) return 1
+                    if(a[2] < b[2]) return -1
+                    if(a[2] === b[2]) return 0
+                })
+
+                const longestArrayLengthResult = getLongestArrayLength(commonGroup)
+
+                // Display the longest array length
+                let oldLongestArrayElement = document.getElementById('longest_array_length')
+                if (oldLongestArrayElement) {
+                    oldLongestArrayElement.innerHTML = ''
+                } else {
+                    oldLongestArrayElement = document.createElement('p')
+                    oldLongestArrayElement.setAttribute('id', 'longest_array_length')
+                }
+                oldLongestArrayElement.innerText = `The longest array length is: ${longestArrayLengthResult}`
+                document.body.insertAdjacentElement('beforeend', oldLongestArrayElement)
+            }
+
+            // Push to possiblePairs[] all possible pairs expressed with tuples
+            possiblePairs = getPossiblePairs(currencies)
+
+            // Build an array of all urls that need to be fetched
+            exchangeUrlList =  getUrlsToBeFetched(possiblePairs)
+
+            // Run all requests asynchronously
+             const responseData = await fetchCurrencyData(exchangeUrlList)
+
+            // Create tuples from possiblePairs with added exchange rates
+            possiblePairsWithRates = addExchangeRatesToPairs(possiblePairs, responseData)
+
+            // Initialize option ready values with currency keys and empty arrays as values
+            for (const currency of currencies) {
+                optionReadyValues[currency.toLowerCase()] = []
+            }
+
+            // Populate rates for every currency key
+            for (const currency of Object.keys(optionReadyValues)) {
+                optionReadyValues[currency] = getRatesByCurrency(currency, possiblePairsWithRates)
+            }      
+
+            // Build the <select> element with its options and append it as child of body
+            const currenciesDropdownElement = document.createElement('select')
+            currenciesDropdownElement.style.marginBottom = '10px'
+            currenciesDropdownElement.innerHTML = `
+                ${currencies.map(currency => `<option ${currency === 'USD' ? 'selected' : ''} value="${currency.toLowerCase()}">${currency}</option>`)}
+            `
+            currenciesDropdownElement.addEventListener('change', (e) => {
+                changeExchangeRatesUIData(e.target.value, optionReadyValues)
+                calculateAndDisplayLongestArrayLength(e.target.value, optionReadyValues)
+            })
+            document.body.appendChild(currenciesDropdownElement)
+
+            changeExchangeRatesUIData(currenciesDropdownElement.value, optionReadyValues)            
+
+
+            // ============= Sub Task =============
+            calculateAndDisplayLongestArrayLength(currenciesDropdownElement.value, optionReadyValues)
+            
+
+            
+        })();
+    </script>
+</body>
+</html>
